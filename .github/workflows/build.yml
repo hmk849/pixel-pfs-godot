@@ -30,17 +30,45 @@ jobs:
       - name: Install export templates
         run: |
           set -e
-          curl -fL "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz" -o /tmp/templates.tpz
-          mkdir -p /tmp/template-extract
-          unzip -o -q /tmp/templates.tpz -d /tmp/template-extract
-          TEMPLATE_DIR="$(find /tmp/template-extract -type d -name templates -print -quit)"
-          if [ -z "$TEMPLATE_DIR" ]; then
-            TEMPLATE_DIR="/tmp/template-extract"
-          fi
           DEST="$HOME/.local/share/godot/export_templates/4.4.1.stable"
           mkdir -p "$DEST"
-          cp -R "$TEMPLATE_DIR"/. "$DEST/"
-          ls "$DEST" | head -20
+          if command -v python3 >/dev/null 2>&1; then
+            python3 - <<'PY'
+          import urllib.request, zipfile, os, shutil
+          url = "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz"
+          urllib.request.urlretrieve(url, "/tmp/templates.tpz")
+          with zipfile.ZipFile("/tmp/templates.tpz") as z:
+              z.extractall("/tmp/template-extract")
+          src = None
+          for root, dirs, files in os.walk("/tmp/template-extract"):
+              if os.path.basename(root) == "templates":
+                  src = root
+                  break
+          if src is None:
+              src = "/tmp/template-extract"
+          dest = os.path.expanduser("~/.local/share/godot/export_templates/4.4.1.stable")
+          os.makedirs(dest, exist_ok=True)
+          for item in os.listdir(src):
+              s = os.path.join(src, item)
+              d = os.path.join(dest, item)
+              if os.path.isdir(s):
+                  shutil.copytree(s, d, dirs_exist_ok=True)
+              else:
+                  shutil.copy2(s, d)
+          print(sorted(os.listdir(dest)))
+          PY
+          else
+            apt-get update -qq && apt-get install -y -qq curl unzip
+            curl -fL "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz" -o /tmp/templates.tpz
+            mkdir -p /tmp/template-extract
+            unzip -o -q /tmp/templates.tpz -d /tmp/template-extract
+            TEMPLATE_DIR="$(find /tmp/template-extract -type d -name templates -print -quit)"
+            if [ -z "$TEMPLATE_DIR" ]; then
+              TEMPLATE_DIR="/tmp/template-extract"
+            fi
+            cp -R "$TEMPLATE_DIR"/. "$DEST/"
+          fi
+          ls "$DEST"
 
       - name: Export Web
         run: |
@@ -171,20 +199,25 @@ jobs:
           set -e
           mkdir -p build
           "$GODOT" --headless --path . --export-release "iOS" build/pixpfs.zip
-          test -s build/pixpfs.zip
+          test -s build/pixpfs.zip || test -d build/pixpfs.xcodeproj
 
-      - name: Extract Xcode project
+      - name: Locate Xcode project
         run: |
           set -e
-          mkdir -p build/xcode
-          unzip -o build/pixpfs.zip -d build/xcode
-          XCODEPROJ="$(find build/xcode -name '*.xcodeproj' -print -quit)"
+          if [ -s build/pixpfs.zip ]; then
+            mkdir -p build/xcode
+            unzip -o build/pixpfs.zip -d build/xcode
+            XCODEPROJ="$(find build/xcode -name '*.xcodeproj' -print -quit)"
+          else
+            XCODEPROJ="$(find build -maxdepth 2 -name '*.xcodeproj' -print -quit)"
+          fi
           if [ -z "$XCODEPROJ" ]; then
-            echo "ERROR: 导出 ZIP 中没有 Xcode 项目"
-            find build/xcode -maxdepth 5 -print
+            echo "ERROR: 没有找到 Xcode 项目"
+            find build -maxdepth 3 -print
             exit 1
           fi
           echo "XCODEPROJ=$XCODEPROJ" >> "$GITHUB_ENV"
+          echo "Xcode project: $XCODEPROJ"
 
       - name: Build unsigned iOS app
         run: |
