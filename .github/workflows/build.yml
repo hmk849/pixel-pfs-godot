@@ -27,6 +27,21 @@ jobs:
       - name: Import assets
         run: godot --headless --path . --import
 
+      - name: Install export templates
+        run: |
+          set -e
+          curl -fL "https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz" -o /tmp/templates.tpz
+          mkdir -p /tmp/template-extract
+          unzip -o -q /tmp/templates.tpz -d /tmp/template-extract
+          TEMPLATE_DIR="$(find /tmp/template-extract -type d -name templates -print -quit)"
+          if [ -z "$TEMPLATE_DIR" ]; then
+            TEMPLATE_DIR="/tmp/template-extract"
+          fi
+          DEST="$HOME/.local/share/godot/export_templates/4.4.1.stable"
+          mkdir -p "$DEST"
+          cp -R "$TEMPLATE_DIR"/. "$DEST/"
+          ls "$DEST" | head -20
+
       - name: Export Web
         run: |
           mkdir -p build/web
@@ -137,6 +152,7 @@ jobs:
           [preset.0.options]
 
           application/bundle_identifier="com.hann.pixpfs"
+          application/app_store_team_id="XXXXXXXXXX"
           application/short_version="1.0.0"
           application/version="1.0.0"
           application/name="Pixpfs"
